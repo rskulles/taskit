@@ -25,6 +25,7 @@ const (
 	screenRequirements
 	screenTasks
 	screenForm
+	screenEmailForm
 	screenConfirmDelete
 	screenConfirmQuit
 	screenDirPicker
@@ -101,6 +102,7 @@ type errMsg struct{ err error }
 type savedMsg struct{}
 type deletedMsg struct{}
 type exportedMsg struct{ filename string }
+type mailedMsg struct{}
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -210,6 +212,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case formSubmitMsg:
+		if m.screen == screenEmailForm {
+			from := m.form.Value(0)
+			to := m.form.Value(1)
+			m.screen = m.prevScreen
+			if m.exportingProject != nil {
+				return m, m.doEmailExport(*m.exportingProject, from, to)
+			}
+			return m, nil
+		}
 		return m, m.saveForm()
 
 	case savedMsg:
@@ -226,13 +237,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.infoMsg = "exported to " + msg.filename
 		return m, nil
 
+	case mailedMsg:
+		m.infoMsg = "email draft opened"
+		return m, nil
+
 	case errMsg:
 		m.errMsg = msg.err.Error()
 		return m, nil
 	}
 
 	switch m.screen {
-	case screenForm:
+	case screenForm, screenEmailForm:
 		return m.updateForm(msg)
 	case screenConfirmDelete:
 		return m.updateConfirmDelete(msg)
@@ -305,6 +320,9 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(kmsg, keys.Export) && m.screen == screenProjects:
 			return m.openDirPicker()
+
+		case key.Matches(kmsg, keys.Mail) && m.screen == screenProjects:
+			return m.openEmailForm()
 
 		case key.Matches(kmsg, keys.Enter):
 			return m.drillDown()
@@ -563,6 +581,43 @@ func (m Model) doExportToDir(dir string) tea.Cmd {
 	}
 }
 
+func (m Model) openEmailForm() (tea.Model, tea.Cmd) {
+	item, ok := m.projectList.SelectedItem().(projectItem)
+	if !ok {
+		return m, nil
+	}
+	p := item.p
+	m.exportingProject = &p
+	m.form = newForm("Email \""+p.Name+"\"", m.width)
+	m.form.addField("From", "your@email.com", "")
+	m.form.addField("To", "recipient@email.com", "")
+	m.form.HideStatus()
+	m.form.focusFirst()
+	m.prevScreen = m.screen
+	m.screen = screenEmailForm
+	return m, nil
+}
+
+func (m Model) doEmailExport(p core.Project, from, to string) tea.Cmd {
+	return func() tea.Msg {
+		var buf strings.Builder
+		if err := export.HTMLEmail(context.Background(), m.store, p.ID, &buf); err != nil {
+			return errMsg{err}
+		}
+		path := filepath.Join(os.TempDir(), export.EMLFilename(p.Name))
+		f, err := os.Create(path)
+		if err != nil {
+			return errMsg{err}
+		}
+		export.WriteEML("Status for project "+p.Name, from, to, buf.String(), f)
+		f.Close()
+		if err := export.OpenFile(path); err != nil {
+			return errMsg{err}
+		}
+		return mailedMsg{}
+	}
+}
+
 func (m Model) openConfirmDelete() (tea.Model, tea.Cmd) {
 	m.prevScreen = m.screen
 	m.screen = screenConfirmDelete
@@ -810,7 +865,7 @@ func (m Model) loadTasks(requirementID int64) tea.Cmd {
 func (m Model) View() string {
 	var sb strings.Builder
 
-	if m.screen == screenForm {
+	if m.screen == screenForm || m.screen == screenEmailForm {
 		sb.WriteString(styleBorder.Width(m.width - 4).Render(m.form.View()))
 		if m.errMsg != "" {
 			sb.WriteString("\n" + styleError.Render("Error: "+m.errMsg))
@@ -864,7 +919,7 @@ func (m Model) View() string {
 
 	help := "n: new  e: edit  d: delete  enter: open  esc: back  q: quit  ctrl+c: force quit"
 	if m.screen == screenProjects {
-		help += "  x: export"
+		help += "  x: export  m: email"
 	}
 	sb.WriteString("\n" + styleHelp.Render(help))
 

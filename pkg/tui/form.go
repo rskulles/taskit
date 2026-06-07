@@ -14,12 +14,14 @@ type formSubmitMsg struct{}
 
 // form is a reusable multi-field input form.
 // Tab order: text fields → status → blocked reason (only when blocked) → save button.
+// Call HideStatus() to suppress the status/blocked-reason rows (e.g. for email prompts).
 type form struct {
 	title         string
 	fields        []textinput.Model
 	labels        []string
 	statusIdx     int // index into core.AllStatuses()
 	blockedReason textinput.Model
+	noStatus      bool
 	focused       int
 	width         int
 }
@@ -40,6 +42,9 @@ func (f *form) addField(label, placeholder, value string) {
 	f.labels = append(f.labels, label)
 }
 
+// HideStatus suppresses the status and blocked-reason rows.
+func (f *form) HideStatus() { f.noStatus = true }
+
 func (f *form) focusFirst() {
 	if len(f.fields) > 0 {
 		f.fields[0].Focus()
@@ -51,7 +56,11 @@ func (f *form) isBlocked() bool { return f.Status() == core.StatusBlocked }
 
 // totalFields is the number of navigable rows:
 // text fields + status + (blocked reason if blocked) + save button.
+// When noStatus is set: text fields + save button only.
 func (f *form) totalFields() int {
+	if f.noStatus {
+		return len(f.fields) + 1
+	}
 	n := len(f.fields) + 2 // status + save
 	if f.isBlocked() {
 		n++ // blocked reason
@@ -60,14 +69,17 @@ func (f *form) totalFields() int {
 }
 
 func (f *form) onStatusField() bool {
-	return f.focused == len(f.fields)
+	return !f.noStatus && f.focused == len(f.fields)
 }
 
 func (f *form) onBlockedReasonField() bool {
-	return f.isBlocked() && f.focused == len(f.fields)+1
+	return !f.noStatus && f.isBlocked() && f.focused == len(f.fields)+1
 }
 
 func (f *form) onSaveButton() bool {
+	if f.noStatus {
+		return f.focused == len(f.fields)
+	}
 	if f.isBlocked() {
 		return f.focused == len(f.fields)+2
 	}
@@ -184,30 +196,32 @@ func (f *form) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Status selector row
-	if f.onStatusField() {
-		sb.WriteString(styleSelected.Render("> Status: "))
-	} else {
-		sb.WriteString("  Status: ")
-	}
-	for i, s := range core.AllStatuses() {
-		badge := statusBadge(s.String())
-		if i == f.statusIdx {
-			badge = lipgloss.NewStyle().Underline(true).Render(badge)
-		}
-		sb.WriteString(badge + " ")
-	}
-	sb.WriteString("\n")
-
-	// Blocked reason row — only shown when blocked is selected
-	if f.isBlocked() {
-		if f.onBlockedReasonField() {
-			sb.WriteString(styleSelected.Render("> Blocked reason: "))
+	if !f.noStatus {
+		// Status selector row
+		if f.onStatusField() {
+			sb.WriteString(styleSelected.Render("> Status: "))
 		} else {
-			sb.WriteString("  Blocked reason: ")
+			sb.WriteString("  Status: ")
 		}
-		sb.WriteString(f.blockedReason.View())
+		for i, s := range core.AllStatuses() {
+			badge := statusBadge(s.String())
+			if i == f.statusIdx {
+				badge = lipgloss.NewStyle().Underline(true).Render(badge)
+			}
+			sb.WriteString(badge + " ")
+		}
 		sb.WriteString("\n")
+
+		// Blocked reason row — only shown when blocked is selected
+		if f.isBlocked() {
+			if f.onBlockedReasonField() {
+				sb.WriteString(styleSelected.Render("> Blocked reason: "))
+			} else {
+				sb.WriteString("  Blocked reason: ")
+			}
+			sb.WriteString(f.blockedReason.View())
+			sb.WriteString("\n")
+		}
 	}
 
 	sb.WriteString("\n")
