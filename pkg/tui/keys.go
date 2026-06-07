@@ -12,6 +12,7 @@ type keyMap struct {
 	Delete    key.Binding
 	Export    key.Binding
 	SelectDir key.Binding
+	Mail      key.Binding
 	Quit      key.Binding
 	ForceQuit key.Binding
 	Confirm   key.Binding
@@ -30,6 +31,7 @@ var keys = keyMap{
 	Delete:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 	Export:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "export")),
 	SelectDir: key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "export here")),
+	Mail:      key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "email")),
 	Quit:      key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 	ForceQuit: key.NewBinding(key.WithKeys("ctrl+c")),
 	Confirm:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
